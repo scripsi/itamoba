@@ -5,7 +5,7 @@
 # A script for showing if there is any music on BBC Alba
 
 # *** IMPORTS ***
-from machine import Pin
+from machine import Pin, PWM
 import time
 import ntptime
 import network
@@ -14,9 +14,13 @@ import json
 
 # *** CONSTANTS ***
 GPIO_GREEN = 15
-GPIO_YELLOW = 13
-GPIO_ORANGE = 9
-GPIO_RED = 5
+GPIO_YELLOW = 11
+GPIO_ORANGE = 7
+GPIO_RED = 3
+
+MAX_BRIGHTNESS = [500, 1000, 1000, 1000] # Green, Yellow, Orange, Red
+
+PWM_FREQUENCY = 2000
 
 BBC_SCHEDULE_URL_PREFIX='https://www.bbc.co.uk/iplayer/guide/bbcalba/'
 # Need to set a valid user agent string or the BBC server will return 403 Access Denied
@@ -41,10 +45,10 @@ INET_ERROR = [0,1,0,1] # xYxR - Problem getting network time or problem accessin
 PARSE_ERROR = [0,1,1,0] # xYOx - Problem parsing schedule page - Has the format changed?
 
 # *** GLOBAL VARIABLES ***
-leds = [Pin(GPIO_GREEN, Pin.OUT),
-        Pin(GPIO_YELLOW, Pin.OUT),
-        Pin(GPIO_ORANGE, Pin.OUT),
-        Pin(GPIO_RED, Pin.OUT)]
+leds = [PWM(Pin(GPIO_GREEN), freq=PWM_FREQUENCY, duty_u16=MAX_BRIGHTNESS[0]),
+        PWM(Pin(GPIO_YELLOW), freq=PWM_FREQUENCY, duty_u16=MAX_BRIGHTNESS[1]),
+        PWM(Pin(GPIO_ORANGE), freq=PWM_FREQUENCY, duty_u16=MAX_BRIGHTNESS[2]),
+        PWM(Pin(GPIO_RED), freq=PWM_FREQUENCY, duty_u16=MAX_BRIGHTNESS[3])]
 
 led_refresh_interval = 10
 schedule_refresh_interval = 3600
@@ -53,7 +57,7 @@ schedule_refresh_interval = 3600
 
 def set_leds(pattern=[0,0,0,0]):
   for l in range(4):
-    leds[l].value(pattern[l])
+    leds[l].duty_u16(pattern[l] * MAX_BRIGHTNESS[l])
 
 def parse_schedule(schedule_page):
   print("Parsing schedule page...")
@@ -88,19 +92,22 @@ def parse_schedule(schedule_page):
   schedule_string = schedule_bytes.decode('utf8')
   schedule_json = json.loads(schedule_string)
   programmes = schedule_json["schedule"]["items"]
+  # print(json.dumps(programmes))
   music_times = []
   for item in programmes:
-    if item["props"]["label"] == "Music":
-      # Timestamps are provided by the BBC schedule in the format 2025-10-12T14:10:00.000Z
-      # Fortunately they are given in UTC, so I don't have to worry about daylight savings time! 
-      s = item["meta"]["scheduledStart"]
-      start_time = time.mktime([int(s[0:4]), int(s[5:7]), int(s[8:10]), int(s[11:13]), int(s[14:16]), int(s[17:19]),0,0])
-      st = time.gmtime(start_time)
-      e = item["meta"]["scheduledEnd"]
-      end_time = time.mktime([int(e[0:4]), int(e[5:7]), int(e[8:10]), int(e[11:13]), int(e[14:16]), int(e[17:19]),0,0])
-      et = time.gmtime(end_time)
-      print(f"Music found from {st[3]:02d}:{st[4]:02d}:{st[5]:02d} to {et[3]:02d}:{et[4]:02d}:{et[5]:02d}!")
-      music_times.append([start_time, end_time])
+    # print(json.dumps(item))
+    if 'label' in item['props']:
+      if item['props']['label'] == "Music":
+        # Timestamps are provided by the BBC schedule in the format 2025-10-12T14:10:00.000Z
+        # Fortunately they are given in UTC, so I don't have to worry about daylight savings time! 
+        s = item["meta"]["scheduledStart"]
+        start_time = time.mktime([int(s[0:4]), int(s[5:7]), int(s[8:10]), int(s[11:13]), int(s[14:16]), int(s[17:19]),0,0])
+        st = time.gmtime(start_time)
+        e = item["meta"]["scheduledEnd"]
+        end_time = time.mktime([int(e[0:4]), int(e[5:7]), int(e[8:10]), int(e[11:13]), int(e[14:16]), int(e[17:19]),0,0])
+        et = time.gmtime(end_time)
+        print(f"Music found from {st[3]:02d}:{st[4]:02d}:{st[5]:02d} to {et[3]:02d}:{et[4]:02d}:{et[5]:02d}!")
+        music_times.append([start_time, end_time])
   
   return music_times
 
@@ -120,7 +127,7 @@ time.sleep(1)
 # configure with the following commands in the REPL:
 #
 # >>> import json
-# >>> config={'wifissid':'[ssid]','wifipass':'[pass]','routeone':'[NN]','routetwo':'[NN]'}
+# >>> config={'wifissid':'[ssid]','wifipass':'[pass]'}
 # >>> f = open('config.json', 'w')
 # >>> f.write(json.dumps(config))
 # >>> f.close()
